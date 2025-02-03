@@ -1,5 +1,11 @@
 
 
+ 
+
+[![DOI](https://zenodo.org/badge/918268400.svg)](https://doi.org/10.5281/zenodo.14794007)
+
+
+
 This repository contains code to perform single cell lineage tracing preprocessing steps.
 ## Overview of steps of the analysis
 - Demultiplexing of reads
