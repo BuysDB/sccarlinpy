@@ -1,0 +1,119 @@
+configfile: "config.json"
+import glob
+
+# Identify targets
+targets = [p.split('_')[0]+'.scstats.tsv' for p in glob.glob('*_1.fastq.gz')]
+
+
+
+def get_read_group(wildcards) -> str:
+    # Get read group identifier for the supplied wildcards
+    library = wildcards.library
+
+    id = f'{library}'
+    sm = id
+
+    return f"@RG\\tID:{id}\\tSM:{sm}"
+
+rule all:
+    input:
+        targets
+
+rule demux:
+    input:
+        r1="{library}_1.fastq.gz",
+        r2="{library}_2.fastq.gz"
+    output:
+        r="{library}.fastq.gz"
+
+    shell:
+        "sccarlinpy_demux {input.r1} {input.r2} {output.r} "
+
+
+rule trim:
+    input:
+        r1="{library}.fastq.gz"
+
+    output:
+        r1out="{library}.trimmed.fastq.gz",
+        reporthtml= "{library}.fastp.html",
+        reportjson= "{library}.fastp.json"
+
+    log:
+        stdout="log/trim/{library}.stdout",
+        stderr="log/trim/{library}.stderr"
+    shell:
+        'fastp -i {input.r1} -o {output.r1out} --html {output.reporthtml}  --json {output.reportjson} --low_complexity_filter --trim_poly_x'
+        '> {log.stdout}  2> {log.stderr}'
+
+rule map_se:
+    input:
+        ref=config['reference_file'],
+        r1="{library}.trimmed.fastq.gz"
+
+    output:
+        unsortedbam = "{library}_minimap_unsorted.bam"
+    log:
+        stdout="log/map/{library}.stdout",
+        stderr="log/map/{library}.stderr"
+    threads: 40
+    params:
+        runtime="30h",
+        rg = get_read_group,
+    resources:
+        mem_mb=lambda wildcards, attempt: 150000 * attempt
+    wildcard_constraints:
+        see = ""
+    run:
+        shell(
+                "minimap2 "
+                "--MD -K 8g "
+                "-2 "
+                "--cap-kalloc=2000m -ax sr " #was map-ont , but not sure why-x sr
+                "-t {threads} "
+                "{input.ref} "
+                "{input.r1} "
+                "-R \"{params.rg}\" "
+                "-y  "
+                "2> {log.stdout} "
+                "|  samtools view -b -@10 - > "
+                "{output.unsortedbam} 2> {log.stderr}"
+
+        )
+
+rule sort:
+    input:
+        unsortedbam = "{library}_minimap_unsorted.bam"
+    output:
+        bam = "{library}_minimap.bam",
+        bam_index = "{library}_minimap.bam.bai"
+    threads: 10
+    shell:
+        "samtools sort  -@ {threads} "
+        "{input.unsortedbam} -o {output.bam} && samtools index -@{threads} {output.bam}"
+
+
+
+
+rule primer_filter_and_aggregate:
+    input:
+        r1="{library}_minimap.bam" 
+    output:
+        aggregate_tsv='{library}.scstats.tsv'
+    params:
+        max_primer_hamming_distance=2,
+        minlength=150,
+        target_contig=config['target_contig']
+    threads: 1
+    log:
+        stdout="log/scstats/{library}.stdout",
+        stderr="log/scstats/{library}.stderr"
+    shell:
+        'sccarlinpy_fastq_sc_scar_aggregate {input.r1} '
+        '-max_primer_hamming_distance {params.max_primer_hamming_distance} '
+        '-minlength {params.minlength} '
+        '-o {output.aggregate_tsv} '
+        '-target_contig {params.target_contig} '
+        '> {log.stdout}  2> {log.stderr}'
+
+

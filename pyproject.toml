@@ -1,0 +1,15 @@
+[project]
+name = "sccarlinpy"
+version = "1"
+
+dependencies = [
+  "singlecellmultiomics>=0.1.40"
+]
+description = "Analyse single cell carlin data"
+
+[tool.setuptools]
+packages = ["sccarlinpy"]
+
+[project.scripts]
+sccarlinpy_fastq_sc_scar_aggregate = "sccarlinpy.fastq_sc_scar_aggregate:main_cli"
+sccarlinpy_demux  = "sccarlinpy.demux:main_cli"
